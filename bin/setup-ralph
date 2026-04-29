@@ -1,0 +1,191 @@
+#!/bin/bash
+set -e
+
+if [ -f prompt.md ] || [ -f prompt-human.md ]; then
+  read -p "prompt.md and/or prompt-human.md already exist. Overwrite both? [y/N] " confirm
+  [[ "$confirm" != "y" && "$confirm" != "Y" ]] && exit 0
+fi
+
+PROMPT_FILE=$(mktemp)
+trap 'rm -f "$PROMPT_FILE"' EXIT
+
+cat > "$PROMPT_FILE" <<'RALPH_PROMPT_EOF'
+Generate TWO files in the current working directory, both tailored to THIS repository:
+
+1. `prompt.md` — for the autonomous `ralph` iterative-coding loop (picks `ready-for-agent` issues)
+2. `prompt-human.md` — for interactive human-collaborator sessions (picks `ready-for-human` issues, surfaces decisions to the user)
+
+## Step 1 — inspect the repo
+
+Detect the language(s) and primary tooling. Look for: package.json, bun.lockb, go.mod, Cargo.toml, pyproject.toml, Gemfile, mix.exs, deno.json, Makefile, etc. Read the relevant manifest(s) to identify:
+
+- The TEST command (e.g. `bun run test`, `npm test`, `go test ./...`, `cargo test`, `pytest`, `mix test`, `make -C subdir test`)
+- The TYPECHECK / static-analysis / BUILD command (e.g. `bun run typecheck`, `tsc --noEmit`, `go vet ./...`, `go build ./...`, `cargo check`, `mypy`, `ruff check`, `dialyzer`, `make -C subdir build`)
+- Any LINT or FORMAT command the project actually uses (only if defined in scripts/Makefile/etc — do NOT invent one)
+
+If a category does not apply to this stack, omit that bullet entirely — never invent commands.
+
+Also peek at `convex/`, `app/`, `src/`, `go-htmx/`, etc. so you understand whether there are extra feedback loops worth running (e.g. `bunx convex dev --once` for Convex projects). Only include such commands if the repo clearly uses them.
+
+## Step 2 — write prompt.md (autonomous agent)
+
+Write the file using the `<skeleton-agent>` below VERBATIM, except the `# FEEDBACK LOOPS` section, where you replace the placeholder bullets with the real commands you found in step 1.
+
+<skeleton-agent>
+# ISSUE SOURCE
+
+Issues for this repo live as markdown files under `.scratch/<feature-slug>/issues/<NN>-<slug>.md`. Their parent PRDs are at `.scratch/<feature-slug>/PRD.md`. Each file has a `Status:` line near the top.
+
+You have been passed a file containing the last 10 RALPH commits (SHA, date, full message). Review these to understand which issues have already been completed.
+
+# TASK SELECTION
+
+Scan all `.scratch/*/issues/*.md` for issues with `Status: ready-for-agent`. Order them by feature directory, then by the numeric prefix of the filename.
+
+Skip any issue whose `Status:` line is `done` (terminal status — work already finished and the file has been flipped).
+
+Skip any issue whose "Blocked by" reference is not yet present in the passed RALPH commit log.
+
+Skip any issue whose own filename is already referenced in the passed RALPH commit log (it has been completed).
+
+Pick the first remaining issue. If none remain, emit <promise>NO MORE TASKS</promise>.
+
+# EXPLORATION
+
+Read the chosen issue file fully. Read its parent PRD (`../PRD.md` from the issue file). Read any completed blocker issues for context. Then explore the repo and fill your context with information relevant to the task.
+
+# EXECUTION
+
+Complete the task as described in the "What to build" section, satisfying every checkbox in "Acceptance criteria".
+
+Make the smallest change that satisfies the issue. Do not outrun your headlights.
+
+If anything blocks completion, output <promise>ABORT</promise>.
+
+# FEEDBACK LOOPS
+
+Before committing, run the project feedback loops:
+
+- REPLACE_WITH_TEST_COMMAND
+- REPLACE_WITH_TYPECHECK_OR_BUILD_COMMAND
+
+If any feedback loop fails, fix the issue before committing. If you cannot fix it, output <promise>ABORT</promise>.
+
+# COMMIT
+
+Before staging, **flip the `Status:` line on the chosen issue file from `ready-for-agent` to `done`**. Stage that change together with the rest of the work — same commit, same PR. This is the durable record that survives outside the 10-commit log window.
+
+Make a single git commit. The commit message MUST:
+
+1. Start with the `RALPH:` prefix
+2. Reference the issue path (e.g. `.scratch/<slug>/issues/01-foo.md`)
+3. State the task completed
+4. List key decisions made
+5. List files changed (including the issue file's `Status:` flip)
+6. Note blockers or follow-ups for the next iteration
+
+Keep it concise.
+
+# FINAL RULES
+
+ONLY WORK ON A SINGLE TASK PER RUN.
+</skeleton-agent>
+
+## Step 3 — write prompt-human.md (interactive human-collaborator)
+
+Write a parallel file using the `<skeleton-human>` below VERBATIM, again replacing the `# FEEDBACK LOOPS` placeholders with the real commands from step 1.
+
+<skeleton-human>
+# ISSUE SOURCE
+
+Issues for this repo live as markdown files under `.scratch/<feature-slug>/issues/<NN>-<slug>.md`. Their parent PRDs are at `.scratch/<feature-slug>/PRD.md`. Each file has a `Status:` line near the top.
+
+This prompt is invoked at the **start of an interactive session** with the human user. The user is at the keyboard and will collaborate on decisions, sign-offs, and any step that requires judgement. You drive the work; the user reviews and approves.
+
+You have been passed a file containing the last 10 RALPH commits (SHA, date, full message). Review these to understand which issues have already been completed.
+
+# TASK SELECTION
+
+Scan all `.scratch/*/issues/*.md` for issues with `Status: ready-for-human`. Order them by feature directory, then by the numeric prefix of the filename.
+
+Skip any issue whose `Status:` line is `done` (terminal status — work already finished and the file has been flipped).
+
+Skip any issue whose "Blocked by" reference is not yet present in the passed RALPH commit log.
+
+Skip any issue whose own filename is already referenced in the passed RALPH commit log (it has been completed).
+
+Pick the first remaining issue. If none remain, emit <promise>NO MORE TASKS</promise>.
+
+# KICKOFF WITH THE USER
+
+Before exploring or executing, surface the chosen issue to the user in one short message:
+
+- Issue path
+- One-sentence summary of what it builds
+- Why it needs human involvement (the specific decision points, sign-offs, or interactive validations the issue calls out)
+- Estimated rough scope (small / medium / large) based on the acceptance criteria
+
+Then ask the user whether to proceed with this issue or pick a different one.
+
+If the user redirects to a different issue, switch to that one. If the user confirms, proceed.
+
+# EXPLORATION
+
+Read the chosen issue file fully. Read its parent PRD (`../PRD.md` from the issue file). Read any completed blocker issues for context. Explore the repo and fill your context with information relevant to the task.
+
+If the issue calls for an investigation phase before code (e.g., diff investigation, SPEC document, audit), produce that artifact first and **bring it to the user for sign-off before any code lands**.
+
+# EXECUTION
+
+Complete the task as described in the "What to build" section, satisfying every checkbox in "Acceptance criteria".
+
+Make the smallest change that satisfies the issue. Do not outrun your headlights.
+
+For any acceptance criterion that explicitly requires human judgement (e.g., "project owner signs off", "manual approval before merge", "user confirms visually matches"), **pause and surface the artifact to the user**. Do not self-approve human-gated criteria. The whole point of `ready-for-human` is that you and the user collaborate; do not skip the collaboration.
+
+For decision points that emerge during implementation (architectural fork, library choice, scope ambiguity), pause and ask the user. Recommend an answer; let the user decide.
+
+If anything blocks completion that the user cannot unblock, output <promise>ABORT</promise>.
+
+# FEEDBACK LOOPS
+
+Before committing, run the project feedback loops:
+
+- REPLACE_WITH_TEST_COMMAND
+- REPLACE_WITH_TYPECHECK_OR_BUILD_COMMAND
+
+If any feedback loop fails, fix the issue before committing. If you cannot fix it, surface the failure to the user and ask how to proceed; do not silently abort.
+
+# COMMIT
+
+When the user confirms the work is complete (all acceptance criteria checked, all human-gated artifacts approved), **flip the `Status:` line on the chosen issue file from `ready-for-human` to `done`**. Stage that change together with the rest of the work — same commit, same PR. This is the durable record that survives outside the 10-commit log window.
+
+Make a single git commit. The commit message MUST:
+
+1. Start with the `RALPH:` prefix
+2. Reference the issue path (e.g. `.scratch/<slug>/issues/09-foo.md`)
+3. State the task completed
+4. List key decisions made (especially the user-approved ones)
+5. List files changed (including the issue file's `Status:` flip)
+6. Note any blockers or follow-ups for the next iteration
+
+Keep it concise.
+
+# FINAL RULES
+
+ONLY WORK ON A SINGLE TASK PER RUN.
+
+Never self-approve a `ready-for-human` checkbox that names "project owner" or "manual approval" — those are explicit collaboration gates.
+</skeleton-human>
+
+## Step 4 — write both files
+
+Write the adapted `prompt.md` AND `prompt-human.md` to the current working directory. Preserve the literal `<promise>NO MORE TASKS</promise>` and `<promise>ABORT</promise>` tags exactly as shown — the ralph runner greps for those strings.
+
+Do not output anything else, do not modify other files, do not run tests or commits.
+RALPH_PROMPT_EOF
+
+claude --dangerously-skip-permissions --print "$(cat "$PROMPT_FILE")"
+
+echo
+echo "prompt.md and prompt-human.md generated. Review them before running ralph."

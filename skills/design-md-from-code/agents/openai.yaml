@@ -1,0 +1,4 @@
+interface:
+  display_name: "DESIGN.md from code"
+  short_description: "Extract a verified design system from frontend code"
+  default_prompt: "Use $design-md-from-code to create a verified DESIGN.md from this frontend."

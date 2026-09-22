@@ -1,0 +1,9 @@
+[submodule "pstacks/pstack-codex"]
+	path = pstacks/pstack-codex
+	url = git@github.com:gquental/pstack-codex.git
+[submodule "pstacks/pstack-grok"]
+	path = pstacks/pstack-grok
+	url = git@github.com:gquental/pstack-grok.git
+[submodule "pstacks/pstack-claude"]
+	path = pstacks/pstack-claude
+	url = git@github.com:gquental/pstack-claude.git
